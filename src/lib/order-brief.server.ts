@@ -39,6 +39,7 @@ export async function loadOrderBrief(
     timeline: (row["timeline"] as string) ?? null,
     budget: (row["budget"] as string) ?? null,
     recommendation: (row["package_name"] as string) ?? null,
+    source: (row["source"] as "ai" | "manual") ?? "ai",
     createdAt: (row["created_at"] as string) ?? new Date().toISOString(),
   };
 
