@@ -172,7 +172,7 @@ export async function notifyLeadFromCrm(leadId: string) {
 
   const fields = fieldsOf(data as LeadRecord);
   const [email, telegram] = await Promise.all([
-    sendEmail(fields),
+    sendLeadNotificationEmail(fields),
     sendTelegramMessage(telegramText(fields)).then((result) => result.ok),
   ]);
   return { email, telegram };
