@@ -1,5 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { convertToModelMessages, streamText, stepCountIs, tool, type UIMessage } from "ai";
+import {
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  streamText,
+  stepCountIs,
+  tool,
+  type UIMessage,
+} from "ai";
+
 import { z } from "zod";
 
 import { createAiModel, isAiConfigured } from "@/lib/ai-gateway.server";
