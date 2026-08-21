@@ -17,6 +17,7 @@ export type OrderBriefData = {
   timeline: string | null;
   budget: string | null;
   recommendation: string | null;
+  source?: "ai" | "manual" | null;
   createdAt: string;
 };
 
@@ -187,5 +188,6 @@ export function briefFields(brief: OrderBriefData): { label: string; value: stri
     { label: "Timeline", value: brief.timeline || "-" },
     { label: "Budget", value: brief.budget || "-" },
     { label: "Package Recommendation", value: brief.recommendation || "-" },
+    { label: "Source", value: brief.source === "manual" ? "MANUAL_FORM" : "AI_CHATBOT" },
   ];
 }

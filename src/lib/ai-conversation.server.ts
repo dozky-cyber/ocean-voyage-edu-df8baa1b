@@ -2,6 +2,8 @@
 // Every conversation is stored as a draft first; it only becomes a lead once
 // the AI detects a real project intent (one lead per session, never duplicated).
 
+import { normalizeBusiness } from "./business-name";
+
 export type ConversationTurn = { role: "user" | "assistant"; text: string };
 
 export type QualificationInput = {
@@ -121,6 +123,7 @@ export async function qualifyConversation(
 
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const score = scoreConversation(input);
+  const business = normalizeBusiness(input.businessCategory);
   const qualification = qualificationOf(score);
 
   await saveDraftConversation(sessionId, turns);
@@ -148,7 +151,7 @@ export async function qualifyConversation(
     requirement: input.summary,
     budget: input.budget || "Belum ditentukan",
     timeline: input.timeline || "Belum ditentukan",
-    business_name: input.businessCategory || null,
+    business_name: business.name || null,
     features: input.features.join(", "),
     notes: [
       `Skala pengguna: ${input.users || "-"}`,
@@ -232,7 +235,7 @@ export async function qualifyConversation(
 
     const { saveRequirementVersion } = await import("@/lib/requirements.server");
     const saved = await saveRequirementVersion(conversation.id, leadId, {
-      business: input.businessCategory,
+      business: business.name,
       project: input.projectType?.trim() || projectTypeByPackage[input.packageName] || "Lainnya",
       features: input.features,
       problems: input.problems,

@@ -3,6 +3,7 @@
 
 import { LEAD_EMAIL } from "./consultation.server";
 import { escapeHtml, sendTelegramMessage } from "./telegram.server";
+import { normalizeBusiness } from "./business-name";
 
 type LeadRecord = {
   id: string;
@@ -16,6 +17,9 @@ type LeadRecord = {
   business_name: string | null;
   features: string | null;
   notes: string | null;
+  lead_source: string | null;
+  ai_recommended_package: string | null;
+  ai_business_category: string | null;
   ai_summary: string | null;
   ai_problems: unknown;
   ai_requirements: unknown;
@@ -35,13 +39,21 @@ function listOf(value: unknown): string {
   return "";
 }
 
+function sourceLabel(value: string | null) {
+  return clean(value) === "ai_consultant" ? "AI_CHATBOT" : "MANUAL_FORM";
+}
+
 function fieldsOf(lead: LeadRecord) {
   const email = clean(lead.email);
+  const business = normalizeBusiness(clean(lead.business_name) || clean(lead.ai_business_category));
   return {
+    source: sourceLabel(lead.lead_source),
+    packageName: clean(lead.ai_recommended_package),
+    category: clean(business.category ?? lead.ai_business_category),
     name: clean(lead.name),
     email: PLACEHOLDER_EMAIL.test(email) ? "" : email,
     whatsapp: clean(lead.whatsapp),
-    business: clean(lead.business_name),
+    business: business.name,
     project: clean(lead.project_type),
     goal: clean(lead.requirement),
     problems: listOf(lead.ai_problems),
@@ -59,6 +71,8 @@ function orDash(value: string) {
 function emailText(f: ReturnType<typeof fieldsOf>) {
   return [
     "Konsultasi Baru KERJAKU",
+    "",
+    `Source:\n${f.source}`,
     "",
     `Nama:\n${orDash(f.name)}`,
     "",
@@ -100,7 +114,9 @@ function emailHtml(f: ReturnType<typeof fieldsOf>) {
     row("Kebutuhan", f.goal),
     row("Masalah", f.problems),
     row("Fitur", f.features),
+    row("Package", f.packageName),
     row("Ringkasan AI", f.summary),
+    row("Source", f.source),
   ].join("")}</table></div>`;
 }
 
@@ -108,7 +124,9 @@ function telegramText(f: ReturnType<typeof fieldsOf>) {
   const row = (label: string, value: string) =>
     `<b>${label}:</b>\n${escapeHtml(orDash(value))}`;
   return [
-    "🤖 <b>NEW AI CONSULTANT LEAD</b>",
+    "🚀 <b>NEW KERJAKU CONSULTATION</b>",
+    "",
+    row("Source", f.source),
     "",
     row("Nama", f.name),
     "",
@@ -129,6 +147,8 @@ function telegramText(f: ReturnType<typeof fieldsOf>) {
     row("Masalah", f.problems),
     "",
     row("Fitur", f.features),
+    "",
+    row("Package", f.packageName),
     "",
     row("Ringkasan AI", f.summary),
   ].join("\n");
@@ -160,7 +180,7 @@ export async function notifyLeadFromCrm(leadId: string) {
   const { data, error } = await supabaseAdmin
     .from("consultations")
     .select(
-      "id, name, email, whatsapp, project_type, requirement, budget, timeline, business_name, features, notes, ai_summary, ai_problems, ai_requirements, created_at",
+      "id, name, email, whatsapp, project_type, requirement, budget, timeline, business_name, features, notes, lead_source, ai_recommended_package, ai_business_category, ai_summary, ai_problems, ai_requirements, created_at",
     )
     .eq("id", leadId)
     .maybeSingle();
