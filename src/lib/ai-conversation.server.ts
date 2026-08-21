@@ -165,6 +165,10 @@ export async function qualifyConversation(
     ai_qualification_status: qualification,
     ai_complexity: input.complexity,
     ai_conversation: turns.slice(-40),
+    // CRM mirrors the AI qualification so the dashboard shows the same score/temperature.
+    lead_score: score,
+    lead_temperature: qualification,
+
   };
 
   let leadId = conversation?.lead_id ?? null;

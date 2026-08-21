@@ -253,8 +253,8 @@ function htmlBody(
 }
 
 /**
- * Email notification to the owner via the Resend connector gateway.
- * Best-effort: failures are logged, never thrown back to the form.
+ * Email notification to the owner through the shared email transport.
+ * Best-effort: failures are logged with the provider detail, never thrown back to the form.
  */
 export async function sendLeadEmail(
   data: ConsultationForm,
@@ -262,48 +262,18 @@ export async function sendLeadEmail(
   tracking?: LeadTrackingPayload,
   ai?: AiConsultationPayload,
 ) {
-  const lovableKey = process.env["LOVABLE_API_KEY"];
-  const resendKey = process.env["RESEND_API_KEY"];
-  if (!lovableKey || !resendKey) {
-    console.error("[consultation] email skipped: missing LOVABLE_API_KEY or RESEND_API_KEY");
-    return { sent: false, reason: "email_not_configured" as const };
-  }
-
+  const { sendEmail } = await import("./email.server");
   const { subject, text } = formatLeadEmail(data, createdAt, tracking, ai);
-  const from = process.env["RESEND_FROM"] ?? "KERJAKU <onboarding@resend.dev>";
-
-  try {
-    const response = await fetch("https://connector-gateway.lovable.dev/resend/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${lovableKey}`,
-        "X-Connection-Api-Key": resendKey,
-      },
-      body: JSON.stringify({
-        from,
-        to: [LEAD_EMAIL],
-        reply_to: data.email,
-        subject,
-        text,
-        html: htmlBody(data, createdAt, tracking, ai),
-      }),
-    });
-
-    if (!response.ok) {
-      const detail = await response.text();
-      console.error(`[consultation] email failed [${response.status}]: ${detail}`);
-      return { sent: false, reason: "email_send_failed" as const };
-    }
-
-    const accepted = (await response.json().catch(() => null)) as { id?: string } | null;
-    console.info(`[consultation] email accepted by provider, id=${accepted?.id ?? "unknown"}`);
-    return { sent: true, reason: null };
-  } catch (error) {
-    console.error(
-      `[consultation] email threw: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return { sent: false, reason: "email_send_failed" as const };
-  }
+  return sendEmail(
+    {
+      to: [LEAD_EMAIL],
+      replyTo: data.email,
+      subject,
+      text,
+      html: htmlBody(data, createdAt, tracking, ai),
+    },
+    "consultation",
+  );
 }
+
 

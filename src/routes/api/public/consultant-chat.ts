@@ -1,5 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { convertToModelMessages, streamText, stepCountIs, tool, type UIMessage } from "ai";
+import {
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  streamText,
+  stepCountIs,
+  tool,
+  type UIMessage,
+} from "ai";
+
 import { z } from "zod";
 
 import { createAiModel, isAiConfigured } from "@/lib/ai-gateway.server";
@@ -403,6 +412,52 @@ function toTurns(messages: UIMessage[]): ConversationTurn[] {
     .filter((turn) => turn.text.length > 0);
 }
 
+/** Customer-facing Order Brief summary, used when the model returns no text after qualifying. */
+function orderBriefMessage(input: z.infer<typeof qualifySchema>) {
+  const value = (text?: string) => (text && text.trim() ? text.trim() : "-");
+  const list = (items?: string[]) =>
+    items && items.length ? items.map((item) => `- ${item}`).join("\n") : "-";
+  const now = new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "full",
+    timeStyle: "short",
+    timeZone: "Asia/Jakarta",
+  }).format(new Date());
+
+  return [
+    "Terima kasih kak, kebutuhan proyek Anda sudah berhasil dirangkum.",
+    "",
+    "📋 ORDER BRIEF KERJAKU",
+    "",
+    `Tanggal Konsultasi:\n${now} WIB`,
+    "",
+    `Customer:\n${value(input.contactName)}`,
+    "",
+    `WhatsApp:\n${value(input.contactWhatsapp)}`,
+    "",
+    `Email:\n${value(input.contactEmail)}`,
+    "",
+    `Bisnis:\n${value(input.businessCategory)}`,
+    "",
+    `Project:\n${value(input.projectType)}`,
+    "",
+    `Tujuan:\n${value(input.goal)}`,
+    "",
+    `Masalah:\n${list(input.problems)}`,
+    "",
+    `Fitur:\n${list(input.features)}`,
+    "",
+    `Timeline:\n${value(input.timeline)}`,
+    "",
+    `Budget:\n${value(input.budget)}`,
+    "",
+    `Package Recommendation:\n${value(input.packageName)}`,
+    "",
+    "Status:\nQualified Lead",
+    "",
+    "Tim KERJAKU akan segera menghubungi Anda untuk menindaklanjuti kebutuhan ini.",
+  ].join("\n");
+}
+
 export const Route = createFileRoute("/api/public/consultant-chat")({
   server: {
     handlers: {
@@ -414,6 +469,9 @@ export const Route = createFileRoute("/api/public/consultant-chat")({
         if (messages.length > 60) return new Response("Conversation too long", { status: 400 });
 
         if (!isAiConfigured()) return new Response("AI not configured", { status: 500 });
+
+        // Captured when the model qualifies the lead, so we can always show the brief in chat.
+        let qualified: z.infer<typeof qualifySchema> | null = null;
 
         const result = streamText({
           model: createAiModel("CHATBOT"),
@@ -434,20 +492,41 @@ KONTEKS WAKTU SISTEM (WIB): ${new Intl.DateTimeFormat("id-ID", {
               execute: async (input) => {
                 const turns = toTurns(messages);
                 const score = scoreConversation(input);
+                qualified = input;
                 await qualifyConversation(sessionId, input, turns);
                 return { ...input, score };
               },
             }),
           },
-          onFinish: async ({ text }) => {
+        });
+
+        const stream = createUIMessageStream<UIMessage>({
+          originalMessages: messages,
+          execute: async ({ writer }) => {
+            writer.merge(result.toUIMessageStream({ sendFinish: false, sendStart: true }));
+
+            const modelText = (await result.text).trim();
+            let finalText = modelText;
+
+            // BUG FIX: qualification sometimes ends the turn with no assistant text.
+            // Always return the customer-facing Order Brief in that case.
+            if (!finalText && qualified) {
+              finalText = orderBriefMessage(qualified);
+              const id = "order-brief-fallback";
+              writer.write({ type: "text-start", id });
+              writer.write({ type: "text-delta", id, delta: finalText });
+              writer.write({ type: "text-end", id });
+            }
+
             const turns = toTurns(messages);
-            if (text.trim()) turns.push({ role: "assistant", text: text.trim() });
+            if (finalText) turns.push({ role: "assistant", text: finalText });
             await saveDraftConversation(sessionId, turns);
           },
         });
 
-        return result.toUIMessageStreamResponse({ originalMessages: messages });
+        return createUIMessageStreamResponse({ stream });
       },
     },
   },
 });
+
