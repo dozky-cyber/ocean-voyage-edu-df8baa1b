@@ -134,43 +134,21 @@ function telegramText(f: ReturnType<typeof fieldsOf>) {
   ].join("\n");
 }
 
-async function sendEmail(f: ReturnType<typeof fieldsOf>) {
-  const lovableKey = process.env["LOVABLE_API_KEY"];
-  const resendKey = process.env["RESEND_API_KEY"];
-  if (!lovableKey || !resendKey) {
-    console.error("[lead-notify] email skipped: missing LOVABLE_API_KEY or RESEND_API_KEY");
-    return false;
-  }
-  const from = process.env["RESEND_FROM"] ?? "KERJAKU <onboarding@resend.dev>";
-  try {
-    const response = await fetch("https://connector-gateway.lovable.dev/resend/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${lovableKey}`,
-        "X-Connection-Api-Key": resendKey,
-      },
-      body: JSON.stringify({
-        from,
-        to: [LEAD_EMAIL],
-        ...(f.email ? { reply_to: f.email } : {}),
-        subject: `[Konsultasi KERJAKU] Project Baru - ${f.name || "Prospek AI"}`,
-        text: emailText(f),
-        html: emailHtml(f),
-      }),
-    });
-    if (!response.ok) {
-      console.error(`[lead-notify] email failed [${response.status}]: ${await response.text()}`);
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error(
-      `[lead-notify] email threw: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return false;
-  }
+async function sendLeadNotificationEmail(f: ReturnType<typeof fieldsOf>) {
+  const { sendEmail } = await import("./email.server");
+  const result = await sendEmail(
+    {
+      to: [LEAD_EMAIL],
+      ...(f.email ? { replyTo: f.email } : {}),
+      subject: `[Konsultasi KERJAKU] Project Baru - ${f.name || "Prospek AI"}`,
+      text: emailText(f),
+      html: emailHtml(f),
+    },
+    "lead-notify",
+  );
+  return result.sent;
 }
+
 
 /**
  * Notify admin (email + Telegram) using the stored CRM lead record.
