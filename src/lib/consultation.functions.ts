@@ -32,14 +32,28 @@ export const submitConsultationLead = createServerFn({ method: "POST" })
 
     const { storeConsultation, sendLeadEmail, formatLeadTelegram } =
       await import("./consultation.server");
-    const { sendTelegramMessage } = await import("./telegram.server");
 
     const { form, tracking, ai, leadSource } = data;
     const row = await storeConsultation(form, tracking, ai, leadSource);
     const createdAt = new Date(row?.created_at ?? Date.now()).toISOString();
 
-    const telegram = await sendTelegramMessage(formatLeadTelegram(form, createdAt, tracking, ai));
-    const email = await sendLeadEmail(form, createdAt, tracking, ai);
+    // Same engine output as the AI Consultant: Lead -> Order Brief -> Notification.
+    let notified = { telegram: false, email: false };
+    if (row?.id) {
+      const { createManualOrderBrief } = await import("./manual-brief.server");
+      await createManualOrderBrief(row.id, form, tracking);
+
+      const { notifyLeadFromCrm } = await import("./lead-notify.server");
+      notified = await notifyLeadFromCrm(row.id);
+    } else {
+      // Storage failed: fall back to the direct notification path.
+      const { sendTelegramMessage } = await import("./telegram.server");
+      const telegram = await sendTelegramMessage(
+        formatLeadTelegram(form, createdAt, tracking, ai),
+      );
+      const email = await sendLeadEmail(form, createdAt, tracking, ai);
+      notified = { telegram: telegram.ok, email: email.sent };
+    }
 
     const { runAutomation } = await import("./automation.server");
     await runAutomation({
@@ -57,8 +71,8 @@ export const submitConsultationLead = createServerFn({ method: "POST" })
     return {
       success: true as const,
       stored: Boolean(row),
-      notifiedTelegram: telegram.ok,
-      notifiedEmail: email.sent,
+      notifiedTelegram: notified.telegram,
+      notifiedEmail: notified.email,
       leadScore: tracking?.leadScore ?? 0,
       leadTemperature: tracking?.leadTemperature ?? "Cold Lead",
     };
